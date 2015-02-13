@@ -48,3 +48,6 @@ let clear = foreign "clear" (void @-> returning void)
 let noecho = foreign "noecho" (void @-> returning void)
 
 let curs_set = foreign "curs_set" (int @-> returning void)
+
+let start_color = foreign "start_color" (void @-> returning void)
+let init_pair = foreign "init_pair" (int @-> int @-> int @-> returning void)

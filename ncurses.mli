@@ -64,3 +64,6 @@ val clear : unit -> unit
 val noecho : unit -> unit
 
 val curs_set : int -> unit
+
+val start_color : unit -> unit
+val init_pair : int -> int -> int -> unit

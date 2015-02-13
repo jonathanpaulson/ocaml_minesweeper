@@ -1,12 +1,31 @@
 open Core.Std
 open Ncurses
 
+let pdc_color_shift = 24
+let a_color = 0xff000000
+
 let color_black = 0
 let color_red = 1
 let color_green = 2
 let color_yellow = 3
-let a_reverse = 0x00200000
+let color_white = 7
 
+let a_reverse = 262144
+
+type color = WHITE | RED | YELLOW
+let color_of_int = function
+  | 1 -> WHITE
+  | 2 -> RED
+  | 3 -> YELLOW
+  | _ -> WHITE
+let int_of_color = function
+  | WHITE -> 1
+  | RED -> 2
+  | YELLOW -> 3
+let color_pair_of_color = function
+  | WHITE -> 256
+  | RED -> 512
+  | YELLOW -> 768
 
 type square =
   | HIDDEN
@@ -83,15 +102,23 @@ let show_board board_win board rr cc =
     | VISIBLE_MINE -> "!"
     | VISIBLE n -> string_of_int n
   in
+  let color_of_cell r c =
+    match board.(r).(c) with
+    | VISIBLE_MINE -> RED
+    | FLAG | FLAG_MINE -> YELLOW
+    | HIDDEN | HIDDEN_MINE | VISIBLE _ -> WHITE
+  in
+  let show_cell r c ch color highlight =
+    if highlight then wattron board_win a_reverse;
+    wattron board_win (color_pair_of_color color);
+    mvwaddstr board_win (r+1) (c+2) ch;
+    wattroff board_win (color_pair_of_color color);
+    if highlight then wattroff board_win a_reverse;
+  in
   box board_win 0 0;
   for r = 0 to rows-1 do
     for c = 0 to cols-1 do
-      if r=rr && c=cc then
-        (wattron board_win a_reverse;
-        mvwaddstr board_win (r+1) (c+2) (string_of_cell r c);
-        wattroff board_win a_reverse)
-      else
-        mvwaddstr board_win (r+1) (c+2) (string_of_cell r c);
+      show_cell r c (string_of_cell r c) (color_of_cell r c) (r=rr && c=cc)
     done
   done;
   wrefresh board_win
@@ -106,6 +133,10 @@ let main rows cols mines () =
   noecho ();
   cbreak ();
   curs_set 0;
+  start_color ();
+  init_pair (int_of_color WHITE) color_white color_black;
+  init_pair (int_of_color RED) color_red color_black;
+  init_pair (int_of_color YELLOW) color_yellow color_black;
   let board_win = newwin (rows+2) (cols+4) 2 0 in
   keypad board_win 0 (* true *);
   mvwaddstr main_window 0 0 "Use arrow keys to go up and down. Press enter to select";
