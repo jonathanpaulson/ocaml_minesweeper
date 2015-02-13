@@ -1,9 +1,7 @@
 open Core.Std
 open Ncurses
 
-let pdc_color_shift = 24
-let a_color = 0xff000000
-
+(* constants copy-pasted from C++ output *)
 let color_black = 0
 let color_red = 1
 let color_green = 2
@@ -23,6 +21,7 @@ let int_of_color = function
   | RED -> 2
   | YELLOW -> 3
 let color_pair_of_color = function
+  (* constants copy/pasted from C++ output *)
   | WHITE -> 256
   | RED -> 512
   | YELLOW -> 768
@@ -38,19 +37,27 @@ type square =
 let ok board r c =
   0 <= r && r < Array.length board && 0 <= c && c < Array.length board.(0)
 
-let count_mines board r c =
+let count_with board r c fn =
   let ans = ref 0 in
   for dr = -1 to 1 do
     for dc = -1 to 1 do
       let r2 = r + dr in
       let c2 = c + dc in
       if ok board r2 c2 then
-        match board.(r2).(c2) with
-        | HIDDEN_MINE | VISIBLE_MINE | FLAG_MINE -> ans := !ans + 1
-        | HIDDEN | VISIBLE _ | FLAG -> ()
+        ans := !ans + (fn board.(r2).(c2))
     done
   done;
   !ans
+
+let count_mines board r c =
+  count_with board r c (fun x -> match x with
+  | HIDDEN_MINE | VISIBLE_MINE | FLAG_MINE -> 1
+  | HIDDEN | VISIBLE _ | FLAG -> 0)
+
+let count_flags board r c =
+  count_with board r c (fun cell -> match cell with
+  | FLAG_MINE | FLAG -> 1
+  | HIDDEN_MINE | VISIBLE_MINE | HIDDEN | VISIBLE _ -> 0)
 
 let rec place_mines board mines =
   if mines=0 then ()
@@ -74,23 +81,31 @@ let flag_square board r c =
   | FLAG_MINE -> board.(r).(c) <- HIDDEN_MINE
   | VISIBLE_MINE | VISIBLE _ -> ()
 
-let rec reveal_square board r c =
-  match board.(r).(c) with
-  | HIDDEN_MINE -> board.(r).(c) <- VISIBLE_MINE
-  | FLAG | FLAG_MINE -> ()
-  | VISIBLE _ | VISIBLE_MINE -> ()
-  | HIDDEN ->
+let reveal_square board r c =
+  let rec reveal_helper r c =
+    match board.(r).(c) with
+    | HIDDEN_MINE -> board.(r).(c) <- VISIBLE_MINE
+    | HIDDEN ->
       let n = count_mines board r c in
       board.(r).(c) <- VISIBLE n;
       if n=0 then
-        for dr = -1 to 1 do
-          for dc = -1 to 1 do
-            let r2 = r + dr in
-            let c2 = c + dc in
-            if ok board r2 c2 then
-              reveal_square board r2 c2
-          done
-        done
+        reveal_around r c
+    | FLAG | FLAG_MINE | VISIBLE _ | VISIBLE_MINE -> ()
+  and reveal_around r c = 
+    for dr = -1 to 1 do
+      for dc = -1 to 1 do
+        let r2 = r + dr in
+        let c2 = c + dc in
+        if ok board r2 c2 then
+          reveal_helper r2 c2
+      done
+    done
+  in
+  match board.(r).(c) with
+  | VISIBLE _ | VISIBLE_MINE ->
+    if count_mines board r c = count_flags board r c then
+      reveal_around r c
+  | _ -> reveal_helper r c
 
 let show_board board_win board rr cc =
   let rows = Array.length board in
@@ -124,6 +139,7 @@ let show_board board_win board rr cc =
   wrefresh board_win
 
 let main rows cols mines () =
+  Random.self_init ();
   let board = Array.make_matrix ~dimx:rows ~dimy:cols HIDDEN in
   let _ = place_mines board mines in
   let r = ref 0 in
@@ -139,7 +155,7 @@ let main rows cols mines () =
   init_pair (int_of_color YELLOW) color_yellow color_black;
   let board_win = newwin (rows+2) (cols+4) 2 0 in
   keypad board_win 0 (* true *);
-  mvwaddstr main_window 0 0 "Use arrow keys to go up and down. Press enter to select";
+  mvwaddstr main_window 0 0 "Arrow keys to move. Space to reveal a square. Enter to flag.";
   refresh ();
   while true do
     show_board board_win board !r !c;
