@@ -1,4 +1,4 @@
-open Core.Std
+open Core
 open Ncurses
 
 (* constants copy-pasted from C++ output *)
@@ -73,39 +73,53 @@ let rec place_mines board mines =
     | HIDDEN_MINE -> place_mines board mines
     | VISIBLE _ | VISIBLE_MINE | FLAG | FLAG_MINE -> assert false
 
-let flag_square board r c =
+let rec reveal_helper board r c =
   match board.(r).(c) with
-  | HIDDEN -> board.(r).(c) <- FLAG
-  | HIDDEN_MINE -> board.(r).(c) <- FLAG_MINE
-  | FLAG -> board.(r).(c) <- HIDDEN
-  | FLAG_MINE -> board.(r).(c) <- HIDDEN_MINE
-  | VISIBLE_MINE | VISIBLE _ -> ()
+  | HIDDEN_MINE -> board.(r).(c) <- VISIBLE_MINE
+  | HIDDEN ->
+    let n = count_mines board r c in
+    board.(r).(c) <- VISIBLE n;
+    if n = count_flags board r c then
+      reveal_around board r c
+  | FLAG | FLAG_MINE | VISIBLE _ | VISIBLE_MINE -> ()
+and reveal_around board r c =
+  for dr = -1 to 1 do
+    for dc = -1 to 1 do
+      let r2 = r + dr in
+      let c2 = c + dc in
+      if ok board r2 c2 then
+        reveal_helper board r2 c2
+    done
+  done
+
+let flag_square board r c =
+  let () =
+    match board.(r).(c) with
+    | HIDDEN -> board.(r).(c) <- FLAG
+    | HIDDEN_MINE -> board.(r).(c) <- FLAG_MINE
+    | FLAG -> board.(r).(c) <- HIDDEN
+    | FLAG_MINE -> board.(r).(c) <- HIDDEN_MINE
+    | VISIBLE_MINE | VISIBLE _ -> ()
+  in
+  for dr = -1 to 1 do
+    for dc = -1 to 1 do
+      let rr = r+dr in
+      let cc = c+dc in
+      if ok board rr cc then
+        match board.(rr).(cc) with
+        | VISIBLE n ->
+          if n = count_flags board rr cc then
+            reveal_around board rr cc
+        | HIDDEN_MINE | HIDDEN | FLAG | FLAG_MINE | VISIBLE_MINE -> ()
+    done
+  done
 
 let reveal_square board r c =
-  let rec reveal_helper r c =
-    match board.(r).(c) with
-    | HIDDEN_MINE -> board.(r).(c) <- VISIBLE_MINE
-    | HIDDEN ->
-      let n = count_mines board r c in
-      board.(r).(c) <- VISIBLE n;
-      if n=0 then
-        reveal_around r c
-    | FLAG | FLAG_MINE | VISIBLE _ | VISIBLE_MINE -> ()
-  and reveal_around r c = 
-    for dr = -1 to 1 do
-      for dc = -1 to 1 do
-        let r2 = r + dr in
-        let c2 = c + dc in
-        if ok board r2 c2 then
-          reveal_helper r2 c2
-      done
-    done
-  in
   match board.(r).(c) with
   | VISIBLE _ | VISIBLE_MINE ->
     if count_mines board r c = count_flags board r c then
-      reveal_around r c
-  | _ -> reveal_helper r c
+      reveal_around board r c
+  | _ -> reveal_helper board r c
 
 let show_board board_win board rr cc =
   let rows = Array.length board in
@@ -115,7 +129,7 @@ let show_board board_win board rr cc =
     | HIDDEN | HIDDEN_MINE -> "."
     | FLAG | FLAG_MINE -> "?"
     | VISIBLE_MINE -> "!"
-    | VISIBLE n -> string_of_int n
+    | VISIBLE n -> string_of_int (n - count_flags board r c)
   in
   let color_of_cell r c =
     match board.(r).(c) with
@@ -159,8 +173,27 @@ let main rows cols mines () =
   refresh ();
   while true do
     show_board board_win board !r !c;
+    let mines_left =
+      let ans = ref 0 in
+      let rows = Array.length board in
+      let cols = Array.length board.(0) in
+      for r = 0 to rows-1 do
+        for c = 0 to cols-1 do
+          match board.(r).(c) with
+          | HIDDEN_MINE -> ans := (!ans + 1)
+          | HIDDEN | FLAG | FLAG_MINE | VISIBLE_MINE | VISIBLE _ -> ()
+        done
+      done;
+      !ans
+    in
+    let mines_str =
+      if mines_left = 0 then
+        "You win!"
+      else
+        (string_of_int mines_left);
+    in
+    mvwaddstr main_window 1 0 mines_str;
     let ch = wgetch board_win in
-    mvwaddstr main_window 1 0 (string_of_int ch);
     refresh ();
     (match ch with
     | 65 -> r := (!r + rows - 1) % rows (* up *)
@@ -173,13 +206,13 @@ let main rows cols mines () =
     );
   done
 
-let () =
+let command =
   Command.basic ~summary:"Play Minesweeper"
-    Command.Spec.(
-      empty
-      +> flag "-r" (optional_with_default 16 int) ~doc:"Rows"
-      +> flag "-c" (optional_with_default 16 int) ~doc:"Columns"
-      +> flag "-m" (optional_with_default 40 int) ~doc:"Mines"
-    )
-    main
-  |> Command.run
+    ~readme:(fun () -> "More detailed information")
+		Command.Let_syntax.(
+			let%map_open r = flag "-r" (optional_with_default 16 int) ~doc:"Rows"
+			and c = flag "-c" (optional_with_default 16 int) ~doc:"Columns"
+		  and m = flag "-m" (optional_with_default 40 int) ~doc:"Mines"
+		  in fun () -> main r c m ())
+
+let () = Command.run command
