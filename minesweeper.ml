@@ -170,6 +170,7 @@ let main rows cols mines () =
   let board_win = newwin (rows+2) (cols+4) 2 0 in
   keypad board_win 0 (* true *);
   mvwaddstr main_window 0 0 "Arrow keys to move. Space to reveal a square. Enter to flag.";
+  mvwaddstr main_window 1 0 (string_of_int mines);
   refresh ();
   while true do
     show_board board_win board !r !c;
@@ -192,6 +193,7 @@ let main rows cols mines () =
       else
         (string_of_int mines_left);
     in
+    mvwaddstr main_window 1 0 "          ";
     mvwaddstr main_window 1 0 mines_str;
     let ch = wgetch board_win in
     refresh ();
